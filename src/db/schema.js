@@ -6,6 +6,7 @@ import {
   integer,
   jsonb,
   pgEnum,
+  index,
 } from "drizzle-orm/pg-core";
 
 // Enums
@@ -30,19 +31,25 @@ export const matches = pgTable("matches", {
 });
 
 // Commentary Table
-export const commentary = pgTable("commentary", {
-  id: serial("id").primaryKey(),
-  matchId: integer("match_id")
-    .notNull()
-    .references(() => matches.id, { onDelete: "cascade" }),
-  minute: integer("minute"),
-  sequence: integer("sequence"),
-  period: text("period"),
-  eventType: text("event_type"),
-  actor: text("actor"),
-  team: text("team"),
-  message: text("message"),
-  metadata: jsonb("metadata"),
-  tags: text("tags").array(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const commentary = pgTable(
+  "commentary",
+  {
+    id: serial("id").primaryKey(),
+    matchId: integer("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    minute: integer("minute"),
+    sequence: integer("sequence"),
+    period: text("period"),
+    eventType: text("event_type"),
+    actor: text("actor"),
+    team: text("team"),
+    message: text("message"),
+    metadata: jsonb("metadata"),
+    tags: text("tags").array(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    commentaryMatchIdIdx: index("commentary_match_id_idx").on(table.matchId),
+  }),
+);

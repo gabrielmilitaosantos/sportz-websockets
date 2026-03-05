@@ -5,10 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="c7a24548-a3ba-4ac0-baa1-c59c59a828d3" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/drizzle/0000_sleepy_shaman.sql" beforeDir="false" afterPath="$PROJECT_DIR$/drizzle/0000_sleepy_shaman.sql" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/db/db.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/db/db.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/demo.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/db/schema.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/db/schema.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -74,7 +71,7 @@
       <workItem from="1772566039579" duration="1756000" />
       <workItem from="1772639583520" duration="263000" />
       <workItem from="1772647663043" duration="5842000" />
-      <workItem from="1772717953365" duration="3882000" />
+      <workItem from="1772717953365" duration="4956000" />
     </task>
     <servers />
   </component>
