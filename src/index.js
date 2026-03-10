@@ -1,7 +1,7 @@
 import express from "express";
 import http from "http";
 import { matchRouter } from "./routes/matches.js";
-import { attachWebSockerServer } from "./ws/server.js";
+import { attachWebSocketServer } from "./ws/server.js";
 
 const rawPort = process.env.PORT ?? "8000";
 const PORT = Number.parseInt(rawPort, 10);
@@ -23,7 +23,7 @@ app.get("/", (req, res) => {
 
 app.use("/matches", matchRouter);
 
-const { broadcastMatchCreated } = attachWebSockerServer(server);
+const { broadcastMatchCreated } = attachWebSocketServer(server);
 // app.locals is the express global object accessible from any request
 app.locals.broadcastMatchCreated = broadcastMatchCreated;
 

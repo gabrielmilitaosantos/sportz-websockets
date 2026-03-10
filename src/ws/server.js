@@ -3,7 +3,15 @@ import { WebSocket, WebSocketServer } from "ws";
 function sendJson(socket, payload) {
   if (socket.readyState !== WebSocket.OPEN) return;
 
-  socket.send(JSON.stringify(payload));
+  try {
+    socket.send(JSON.stringify(payload), (error) => {
+      if (error) {
+        console.error("Failed to send websocket message", error);
+      }
+    });
+  } catch (error) {
+    console.error("Failed to send websocket message", error);
+  }
 }
 
 function broadcast(wss, payload) {
@@ -24,7 +32,7 @@ function broadcast(wss, payload) {
   }
 }
 
-export function attachWebSockerServer(server) {
+export function attachWebSocketServer(server) {
   const wss = new WebSocketServer({
     server,
     path: "/ws",
@@ -44,7 +52,10 @@ export function attachWebSockerServer(server) {
 
   const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
-      if (ws.isAlive === false) return ws.terminate();
+      if (ws.isAlive === false) {
+        ws.terminate();
+        return;
+      }
       ws.isAlive = false;
       ws.ping();
     });
