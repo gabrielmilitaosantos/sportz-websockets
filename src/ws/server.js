@@ -36,7 +36,6 @@ function broadcast(wss, payload) {
 export function attachWebSocketServer(server) {
   const wss = new WebSocketServer({
     noServer: true,
-    path: "/ws",
     maxPayload: 1024 * 1024, // 1MB (Maximum size of message)
   });
 
@@ -57,14 +56,16 @@ export function attachWebSocketServer(server) {
             : "Access Denied";
 
           socket.write(
-            `HTTP/1.1 ${statusCode} ${reason}\r\n` + `Connection: close\r\n`,
+            `HTTP/1.1 ${statusCode} ${reason}\r\nConnection: close\r\n\r\n`,
           );
           socket.destroy();
           return;
         }
       } catch (error) {
         console.error("WS upgrade protection error: ", error);
-        socket.write("HTTP/1.1 500 Internal Server Error\r\n");
+        socket.write(
+          "HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n",
+        );
         socket.destroy();
         return;
       }
