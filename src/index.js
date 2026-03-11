@@ -17,12 +17,11 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(express.json());
+app.use(securityMiddleware());
 
 app.get("/", (req, res) => {
   res.send("Welcome to the server!");
 });
-
-app.use(securityMiddleware());
 
 app.use("/matches", matchRouter);
 

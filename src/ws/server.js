@@ -35,31 +35,47 @@ function broadcast(wss, payload) {
 
 export function attachWebSocketServer(server) {
   const wss = new WebSocketServer({
-    server,
+    noServer: true,
     path: "/ws",
     maxPayload: 1024 * 1024, // 1MB (Maximum size of message)
   });
 
-  wss.on("connection", async (socket, req) => {
+  // Apply Arcjet protection before WebSocket handshake
+  server.on("upgrade", async (req, socket, head) => {
+    if (req.url !== "/ws") {
+      socket.destroy();
+      return;
+    }
+
     if (wsArcjet) {
       try {
         const decision = await wsArcjet.protect(req);
         if (decision.isDenied()) {
-          const code = decision.reason.isRateLimit() ? 1013 : 1008;
+          const statusCode = decision.reason.isRateLimit() ? 429 : 403;
           const reason = decision.reason.isRateLimit()
-            ? "rate limit exceeded"
-            : "access denied";
+            ? "Rate Limit Exceeded"
+            : "Access Denied";
 
-          socket.close(code, reason);
+          socket.write(
+            `HTTP/1.1 ${statusCode} ${reason}\r\n` + `Connection: close\r\n`,
+          );
+          socket.destroy();
           return;
         }
       } catch (error) {
-        console.error("WS connection error: ", error);
-        socket.close(1011, "Server security error");
+        console.error("WS upgrade protection error: ", error);
+        socket.write("HTTP/1.1 500 Internal Server Error\r\n");
+        socket.destroy();
         return;
       }
     }
 
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit("connection", ws, req);
+    });
+  });
+
+  wss.on("connection", (socket, _req) => {
     socket.isAlive = true;
     socket.on("pong", () => {
       socket.isAlive = true;
