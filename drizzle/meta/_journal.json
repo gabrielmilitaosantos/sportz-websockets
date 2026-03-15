@@ -15,6 +15,13 @@
       "when": 1773585256346,
       "tag": "0001_nostalgic_wong",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773588805905,
+      "tag": "0002_slippery_turbo",
+      "breakpoints": true
     }
   ]
 }

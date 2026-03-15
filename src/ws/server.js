@@ -90,6 +90,7 @@ function handleMessage(socket, data) {
     message = JSON.parse(data.toString());
   } catch {
     sendJson(socket, { type: "error", message: "Invalid JSON" });
+    return;
   }
 
   if (
@@ -110,7 +111,11 @@ function handleMessage(socket, data) {
     return;
   }
 
-  if (message?.type === "unsubscribe" && Number.isInteger(message.matchId)) {
+  if (
+    message?.type === "unsubscribe" &&
+    Number.isInteger(message.matchId) &&
+    message.matchId > 0
+  ) {
     unsubscribe(message.matchId, socket);
     socket.subscriptions.delete(message.matchId);
     sendJson(socket, { type: "unsubscribed", matchId: message.matchId });
@@ -174,15 +179,14 @@ export function attachWebSocketServer(server) {
       handleMessage(socket, data);
     });
 
-    socket.on("error", () => {
-      socket.terminate();
-    });
-
     socket.on("close", () => {
       cleanupSubscriptions(socket);
     });
 
-    socket.on("error", console.error);
+    socket.on("error", (error) => {
+      console.error(error);
+      socket.terminate();
+    });
   });
 
   const interval = setInterval(() => {
