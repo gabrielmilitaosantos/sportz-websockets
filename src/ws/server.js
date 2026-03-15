@@ -2,6 +2,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { wsArcjet } from "../../config/arcjet.js";
 
 const matchSubscribers = new Map();
+const MAX_SUBSCRIPTIONS_PER_SOCKET = 100;
 
 function subscribe(matchId, socket) {
   if (!matchSubscribers.has(matchId)) {
@@ -63,13 +64,21 @@ function broadcastToAll(wss, payload) {
 
 function broadcastToMatch(matchId, payload) {
   const subscribers = matchSubscribers.get(matchId);
-  if (!subscribers || subscribe.size === 0) return;
+  if (!subscribers || subscribers.size === 0) return;
 
   const message = JSON.stringify(payload);
 
   for (const client of subscribers) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
+    if (client.readyState !== WebSocket.OPEN) continue;
+
+    try {
+      client.send(message, (error) => {
+        if (error) {
+          console.error("Failed to send websocket message", error);
+        }
+      });
+    } catch (error) {
+      console.error("Failed to send websocket message", error);
     }
   }
 }
@@ -83,7 +92,18 @@ function handleMessage(socket, data) {
     sendJson(socket, { type: "error", message: "Invalid JSON" });
   }
 
-  if (message?.type === "subscribe" && Number.isInteger(message.matchId)) {
+  if (
+    message?.type === "subscribe" &&
+    Number.isInteger(message.matchId) &&
+    message.matchId > 0
+  ) {
+    if (socket.subscriptions.size >= MAX_SUBSCRIPTIONS_PER_SOCKET) {
+      sendJson(socket, {
+        type: "error",
+        message: "Subscription limit reached",
+      });
+      return;
+    }
     subscribe(message.matchId, socket);
     socket.subscriptions.add(message.matchId);
     sendJson(socket, { type: "subscribed", matchId: message.matchId });

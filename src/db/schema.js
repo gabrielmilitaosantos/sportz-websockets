@@ -51,5 +51,9 @@ export const commentary = pgTable(
   },
   (table) => ({
     commentaryMatchIdIdx: index("commentary_match_id_idx").on(table.matchId),
+    commentaryMatchIdCreatedAtIdx: index("idx_commentary_matchId_createdAt").on(
+      table.matchId,
+      table.createdAt,
+    ),
   }),
 );
