@@ -3,6 +3,7 @@ import http from "http";
 import { matchRouter } from "./routes/matches.js";
 import { attachWebSocketServer } from "./ws/server.js";
 import { securityMiddleware } from "../config/arcjet.js";
+import { commentaryRouter } from "./routes/commentary.js";
 
 const rawPort = process.env.PORT ?? "8000";
 const PORT = Number.parseInt(rawPort, 10);
@@ -24,10 +25,13 @@ app.get("/", (req, res) => {
 });
 
 app.use("/matches", matchRouter);
+app.use("/matches/:id/commentary", commentaryRouter);
 
-const { broadcastMatchCreated } = attachWebSocketServer(server);
+const { broadcastMatchCreated, broadcastCommentary } =
+  attachWebSocketServer(server);
 // app.locals is the express global object accessible from any request
 app.locals.broadcastMatchCreated = broadcastMatchCreated;
+app.locals.broadcastCommentary = broadcastCommentary;
 
 server.listen(PORT, HOST, () => {
   const baseUrl =
