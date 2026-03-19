@@ -6,7 +6,7 @@ import {
 import { matches } from "../db/schema.js";
 import { db } from "../db/db.js";
 import { getMatchStatus } from "../utils/match-status.js";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 export const matchRouter = Router();
 
@@ -73,5 +73,38 @@ matchRouter.post("/", async (req, res) => {
     res.status(500).json({
       error: "Failed to create match",
     });
+  }
+});
+
+matchRouter.patch("/:id/score", async (req, res) => {
+  const matchId = Number(req.params.id);
+
+  if (!Number.isInteger(matchId)) {
+    return res.status(400).json({ error: "Invalid match ID" });
+  }
+
+  const { homeScore, awayScore } = req.body;
+
+  if (!Number.isInteger(homeScore) || !Number.isInteger(awayScore)) {
+    return res
+      .status(400)
+      .json({ error: "homeScore and awayScore must be integers" });
+  }
+
+  try {
+    const [updated] = await db
+      .update(matches)
+      .set({ homeScore, awayScore })
+      .where(eq(matches.id, matchId))
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({ error: "Match not found" });
+    }
+
+    res.status(200).json({ data: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update score" });
   }
 });
