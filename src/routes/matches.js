@@ -2,6 +2,8 @@ import { Router } from "express";
 import {
   createMatchSchema,
   listMatchesQuerySchema,
+  matchIdParamSchema,
+  updateScoreSchema,
 } from "../validation/matches.js";
 import { matches } from "../db/schema.js";
 import { db } from "../db/db.js";
@@ -77,19 +79,24 @@ matchRouter.post("/", async (req, res) => {
 });
 
 matchRouter.patch("/:id/score", async (req, res) => {
-  const matchId = Number(req.params.id);
+  const matchId = matchIdParamSchema.safeParse(req.params);
 
-  if (!Number.isInteger(matchId)) {
-    return res.status(400).json({ error: "Invalid match ID" });
+  if (!matchId.success) {
+    return res.status(400).json({
+      error: "Invalid match ID.",
+      details: matchId.error.issues,
+    });
   }
 
-  const { homeScore, awayScore } = req.body;
+  const parsedBody = updateScoreSchema.safeParse(req.body);
 
-  if (!Number.isInteger(homeScore) || !Number.isInteger(awayScore)) {
-    return res
-      .status(400)
-      .json({ error: "homeScore and awayScore must be integers" });
+  if (!parsedBody.success) {
+    return res.status(400).json({
+      error: "homeScore and awayScore must be non-negative integers.",
+    });
   }
+
+  const { homeScore, awayScore } = parsedBody.data;
 
   try {
     const [updated] = await db

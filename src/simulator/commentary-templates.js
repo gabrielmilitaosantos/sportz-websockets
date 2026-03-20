@@ -265,6 +265,9 @@ export function getTemplatesForSport(sport) {
     case "basketball":
       return basketballTemplates;
     default:
+      console.warn(
+        `[Templates] Unknown sport "${sport}", defaulting to football`,
+      );
       return footballTemplates; // Default fallback
   }
 }

@@ -39,14 +39,16 @@ app.locals.broadcastCommentary = broadcastCommentary;
 // Connect simulator to WebSocket broadcast
 simulatorManager.setBroadcastCallback(broadcastCommentary);
 
-server.listen(PORT, HOST, async () => {
+server.listen(PORT, HOST, () => {
   const baseUrl =
     HOST === "0.0.0.0" ? `http://localhost:${PORT}` : `http://${HOST}:${PORT}`;
   console.log(`Server is running on ${baseUrl}`);
   console.log(
     `WebSocket Server is running on ${baseUrl.replace("http", "ws")}/ws`,
   );
-  
+
   // Auto-start simulations for live matches
-  await simulatorManager.autoStartLiveMatches();
+  simulatorManager.autoStartLiveMatches().catch((error) => {
+    console.error("[Server] Failed to auto-start live matches: ", error);
+  });
 });

@@ -96,6 +96,12 @@ export function generatePlayerName() {
 
 // Generate a squad of player names (with no duplicates)
 export function generateSquad(size = 20) {
+  const maxPossible = firstNames.length * lastNames.length;
+  if (size > maxPossible) {
+    throw new Error(
+      `Cannot generate ${size} unique names (max: ${maxPossible})`,
+    );
+  }
   const squad = new Set();
 
   while (squad.size < size) {

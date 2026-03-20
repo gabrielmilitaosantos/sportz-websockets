@@ -13,7 +13,7 @@ Automatically generates realistic live commentary for sports matches, making the
 
 ## Architecture
 
-```
+```text
 simulator/
 ├── commentary-templates.js  # Event templates per sport
 ├── player-names.js          # Player name generator
@@ -176,7 +176,7 @@ ws.onmessage = (event) => {
 4. Watch commentary flow in console and client
 
 ### Expected Output
-```
+```text
 [Simulator] Starting match 1: Team A vs Team B
 [Simulator] Match 1 - Min 1: pass
 [Simulator] Match 1 - Min 2: shot

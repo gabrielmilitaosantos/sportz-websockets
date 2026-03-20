@@ -101,7 +101,10 @@ async function generateEvent(simulatorState, broadcastCallback) {
 
   // Update period at halftime
   let newPeriod = currentPeriod;
-  if (currentMinute === config.halftimeMinute + 1) {
+  if (
+    currentMinute > config.halftimeMinute &&
+    currentPeriod === config.periods[0]
+  ) {
     newPeriod = config.periods[1];
   }
 
@@ -154,10 +157,16 @@ async function generateEvent(simulatorState, broadcastCallback) {
     };
 
     // Update match score in database
-    await db
-      .update(matches)
-      .set({ homeScore: newHomeScore, awayScore: newAwayScore })
-      .where(eq(matches.id, match.id));
+    try {
+      await db
+        .update(matches)
+        .set({ homeScore: newHomeScore, awayScore: newAwayScore })
+        .where(eq(matches.id, match.id));
+    } catch (error) {
+      console.error(
+        `[Simulator] Error updating score for match ${match.id}: ${error}`,
+      );
+    }
   }
 
   // Save commentary to database
@@ -212,28 +221,32 @@ function createMatchSimulator(matchData, broadcastCallback) {
     awayScore: matchData.awayScore || 0,
     config,
   };
-  let intervalId = null;
+  let timeoutId = null;
 
   const start = () => {
     console.log(
       `[Simulator] Starting match ${matchData.id}: ${matchData.homeTeam} vs ${matchData.awayTeam}`,
     );
 
-    intervalId = setInterval(async () => {
-      const newState = await generateEvent(state, broadcastCallback);
+    const scheduleNext = () => {
+      timeoutId = setTimeout(async () => {
+        const newState = await generateEvent(state, broadcastCallback);
 
-      if (newState === null) {
-        stop();
-      } else {
-        state = newState;
-      }
-    }, config.eventIntervalMs);
+        if (newState === null) {
+          stop();
+        } else {
+          state = newState;
+          scheduleNext();
+        }
+      }, config.eventIntervalMs);
+    };
+    scheduleNext();
   };
 
   const stop = () => {
-    if (intervalId) {
-      clearInterval(intervalId);
-      intervalId = null;
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
       console.log(`[Simulator] Stopped match ${matchData.id}`);
     }
   };
