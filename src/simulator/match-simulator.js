@@ -1,9 +1,10 @@
 // Automatically generates realistic commentary for live matches.
 // Manages match progression, event generation, and score updates.
 
-import { db } from "../db/db.js";
+import { db, pool } from "../db/db.js";
 import { commentary, matches } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/neon-serverless";
 import {
   getRandomMessage,
   getTemplatesForSport,
@@ -57,6 +58,10 @@ function getScoreValue(eventType) {
       return 2;
     case "three_pointer":
       return 3;
+    case "boundary":
+      return 4;
+    case "six":
+      return 6;
     default:
       return 1;
   }
@@ -132,7 +137,7 @@ async function generateEvent(simulatorState, broadcastCallback) {
     metadata: null,
   };
 
-  // Handle scoring events
+  // Compute new scores before the transaction so the values are ready
   let newHomeScore = homeScore;
   let newAwayScore = awayScore;
 
@@ -155,40 +160,50 @@ async function generateEvent(simulatorState, broadcastCallback) {
         away: newAwayScore,
       },
     };
+  }
 
-    // Update match score in database
-    try {
-      await db
+  // Persist score update (if any) and commentary in a single transaction
+  let inserted;
+  const client = await pool.connect();
+  const tx = drizzle(client);
+  try {
+    await client.query("BEGIN");
+
+    if (template.scoreDelta) {
+      await tx
         .update(matches)
         .set({ homeScore: newHomeScore, awayScore: newAwayScore })
         .where(eq(matches.id, match.id));
-    } catch (error) {
-      console.error(
-        `[Simulator] Error updating score for match ${match.id}: ${error}`,
-      );
     }
-  }
 
-  // Save commentary to database
-  try {
-    const [inserted] = await db
+    const [row] = await tx
       .insert(commentary)
       .values(commentaryData)
       .returning();
 
-    // Broadcast via WebSocket
-    if (broadcastCallback) {
-      broadcastCallback(match.id, inserted);
-    }
-
-    console.log(
-      `[Simulator] Match ${match.id} - Min ${currentMinute}: ${template.eventType}`,
-    );
+    await client.query("COMMIT");
+    inserted = row;
   } catch (error) {
-    console.error(`[Simulator] Error saving commentary:`, error);
+    await client.query("ROLLBACK");
+    console.error(
+      `[Simulator] Transaction failed for match ${match.id} - Min ${currentMinute}: ${error}`,
+    );
+    // Rollback complete; do not advance state
+    return simulatorState;
+  } finally {
+    client.release();
   }
 
-  // Progress match time
+  // Broadcast only after the transaction has committed
+  if (broadcastCallback) {
+    broadcastCallback(match.id, inserted);
+  }
+
+  console.log(
+    `[Simulator] Match ${match.id} - Min ${currentMinute}: ${template.eventType}`,
+  );
+
+  // Progress match time only on success
   const newSequence = currentSequence + 1;
 
   // Increment minute occasionally (not every event)
@@ -205,15 +220,49 @@ async function generateEvent(simulatorState, broadcastCallback) {
   };
 }
 
+// Rehydrate simulator position from the latest commentary row for this match
+async function rehydrateState(matchId, config) {
+  try {
+    const [latest] = await db
+      .select()
+      .from(commentary)
+      .where(eq(commentary.matchId, matchId))
+      .orderBy(desc(commentary.createdAt))
+      .limit(1);
+
+    if (!latest) return null;
+
+    return {
+      currentMinute: latest.minute ?? 1,
+      currentSequence: (latest.sequence ?? 0) + 1,
+      currentPeriod: latest.period ?? config.periods[0],
+    };
+  } catch (error) {
+    console.error(
+      `[Simulator] Failed to rehydrate state for match ${matchId}:`,
+      error,
+    );
+    return null;
+  }
+}
+
 // Create a new match simulator
-function createMatchSimulator(matchData, broadcastCallback) {
+async function createMatchSimulator(matchData, broadcastCallback, onFinished) {
   const config = getSportConfig(matchData.sport);
+
+  const rehydrated = await rehydrateState(matchData.id, config);
+
+  if (rehydrated) {
+    console.log(
+      `[Simulator] Rehydrated match ${matchData.id} from minute ${rehydrated.currentMinute}, sequence ${rehydrated.currentSequence}, period "${rehydrated.currentPeriod}"`,
+    );
+  }
 
   let state = {
     match: matchData,
-    currentMinute: 1,
-    currentSequence: 1,
-    currentPeriod: config.periods[0],
+    currentMinute: rehydrated?.currentMinute ?? 1,
+    currentSequence: rehydrated?.currentSequence ?? 1,
+    currentPeriod: rehydrated?.currentPeriod ?? config.periods[0],
     homeSquad: generateSquad(11),
     awaySquad: generateSquad(11),
     templates: getTemplatesForSport(matchData.sport),
@@ -222,6 +271,16 @@ function createMatchSimulator(matchData, broadcastCallback) {
     config,
   };
   let timeoutId = null;
+  let cancelled = false;
+
+  const stop = () => {
+    cancelled = true;
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    console.log(`[Simulator] Stopped match ${matchData.id}`);
+  };
 
   const start = () => {
     console.log(
@@ -232,8 +291,11 @@ function createMatchSimulator(matchData, broadcastCallback) {
       timeoutId = setTimeout(async () => {
         const newState = await generateEvent(state, broadcastCallback);
 
+        if (cancelled) return;
+
         if (newState === null) {
           stop();
+          onFinished?.(matchData.id);
         } else {
           state = newState;
           scheduleNext();
@@ -243,18 +305,9 @@ function createMatchSimulator(matchData, broadcastCallback) {
     scheduleNext();
   };
 
-  const stop = () => {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-      timeoutId = null;
-      console.log(`[Simulator] Stopped match ${matchData.id}`);
-    }
-  };
-
   return {
     start,
     stop,
-    getMatchId: () => matchData.id,
   };
 }
 
@@ -269,7 +322,7 @@ function createSimulatorManager() {
     },
 
     // Start simulating a match
-    startMatch(matchData) {
+    async startMatch(matchData) {
       if (activeSimulators.has(matchData.id)) {
         console.warn(
           `[SimulatorManager] Match ${matchData.id} is already being simulated`,
@@ -277,7 +330,16 @@ function createSimulatorManager() {
         return;
       }
 
-      const simulator = createMatchSimulator(matchData, broadcastCallback);
+      const simulator = await createMatchSimulator(
+        matchData,
+        broadcastCallback,
+        (matchId) => {
+          activeSimulators.delete(matchId);
+          console.log(
+            `[SimulatorManager] Match ${matchId} removed from active simulators after finishing`,
+          );
+        },
+      );
       activeSimulators.set(matchData.id, simulator);
       simulator.start();
     },

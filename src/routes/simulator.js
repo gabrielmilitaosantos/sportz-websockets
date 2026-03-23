@@ -45,7 +45,7 @@ simulatorRouter.post("/start/:matchId", async (req, res) => {
     }
 
     // Start simulation
-    simulatorManager.startMatch(match);
+    await simulatorManager.startMatch(match);
 
     res.json({
       message: "Simulation started",

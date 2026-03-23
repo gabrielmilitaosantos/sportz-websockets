@@ -130,6 +130,7 @@ export const cricketTemplates = [
       "Worked away for one.",
       "Easy single to rotate the strike.",
     ],
+    scoreDelta: { home: 0, away: 0 }, // 1 run - Resolve by defaulting in getScoreValue
   },
   {
     eventType: "boundary",
@@ -140,6 +141,7 @@ export const cricketTemplates = [
       "Edged through the slips for four.",
       "Perfectly timed shot races away.",
     ],
+    scoreDelta: { home: 0, away: 0 },
   },
   {
     eventType: "six",
@@ -150,6 +152,7 @@ export const cricketTemplates = [
       "Maximum! What a strike!",
       "Incredible power! Six runs!",
     ],
+    scoreDelta: { home: 0, away: 0 },
   },
   {
     eventType: "wicket",
@@ -170,11 +173,13 @@ export const cricketTemplates = [
       "Down the leg side, wide.",
       "Strays too far outside off.",
     ],
+    scoreDelta: { home: 0, away: 0 }, // 1 run - resolve by default
   },
   {
     eventType: "no_ball",
     weight: 3,
     messages: ["No ball! Free hit coming up.", "Front foot overstepped."],
+    scoreDelta: { home: 0, away: 0 },
   },
 ];
 
