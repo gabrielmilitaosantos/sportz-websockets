@@ -4,6 +4,8 @@ import { matchRouter } from "./routes/matches.js";
 import { attachWebSocketServer } from "./ws/server.js";
 import { securityMiddleware } from "../config/arcjet.js";
 import { commentaryRouter } from "./routes/commentary.js";
+import { simulatorRouter } from "./routes/simulator.js";
+import { simulatorManager } from "./simulator/match-simulator.js";
 
 const rawPort = process.env.PORT ?? "8000";
 const PORT = Number.parseInt(rawPort, 10);
@@ -26,12 +28,16 @@ app.get("/", (req, res) => {
 
 app.use("/matches", matchRouter);
 app.use("/matches/:id/commentary", commentaryRouter);
+app.use("/simulator", simulatorRouter);
 
 const { broadcastMatchCreated, broadcastCommentary } =
   attachWebSocketServer(server);
 // app.locals is the express global object accessible from any request
 app.locals.broadcastMatchCreated = broadcastMatchCreated;
 app.locals.broadcastCommentary = broadcastCommentary;
+
+// Connect simulator to WebSocket broadcast
+simulatorManager.setBroadcastCallback(broadcastCommentary);
 
 server.listen(PORT, HOST, () => {
   const baseUrl =
@@ -40,4 +46,9 @@ server.listen(PORT, HOST, () => {
   console.log(
     `WebSocket Server is running on ${baseUrl.replace("http", "ws")}/ws`,
   );
+
+  // Auto-start simulations for live matches
+  simulatorManager.autoStartLiveMatches().catch((error) => {
+    console.error("[Server] Failed to auto-start live matches: ", error);
+  });
 });
