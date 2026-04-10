@@ -3,7 +3,7 @@
 
 import { db, pool } from "../db/db.js";
 import { commentary, matches } from "../db/schema.js";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, gt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import {
   getRandomMessage,
@@ -40,6 +40,9 @@ function getSportConfig(sport) {
         eventIntervalMs: 5000,
       };
     default:
+      console.warn(
+        `[Simulator] Unknown sport "${sport}", defaulting to football`,
+      );
       return {
         totalMinutes: 90,
         halftimeMinute: 45,
@@ -105,13 +108,10 @@ async function generateEvent(simulatorState, broadcastCallback) {
   }
 
   // Update period at halftime
-  let newPeriod = currentPeriod;
-  if (
-    currentMinute > config.halftimeMinute &&
-    currentPeriod === config.periods[0]
-  ) {
-    newPeriod = config.periods[1];
-  }
+  const newPeriod =
+    currentMinute > config.halftimeMinute && currentPeriod === config.periods[0]
+      ? config.periods[1]
+      : currentPeriod;
 
   // Select event template
   const template = selectRandomEvent(templates);
@@ -122,6 +122,30 @@ async function generateEvent(simulatorState, broadcastCallback) {
   const team = isHomeTeam ? match.homeTeam : match.awayTeam;
   const squad = isHomeTeam ? homeSquad : awaySquad;
   const actor = getRandomPlayer(squad);
+
+  // Compute new scores before the transaction so the values are ready
+  let newHomeScore = homeScore;
+  let newAwayScore = awayScore;
+  let metadata = null;
+
+  if (template.scoreDelta) {
+    if (isHomeTeam) {
+      newHomeScore += getScoreValue(template.eventType);
+    } else {
+      newAwayScore += getScoreValue(template.eventType);
+    }
+
+    metadata = {
+      scoreDelta: {
+        home: isHomeTeam ? getScoreValue(template.eventType) : 0,
+        away: !isHomeTeam ? getScoreValue(template.eventType) : 0,
+      },
+      currentScore: {
+        home: newHomeScore,
+        away: newAwayScore,
+      },
+    };
+  }
 
   // Build commentary object
   const commentaryData = {
@@ -134,38 +158,14 @@ async function generateEvent(simulatorState, broadcastCallback) {
     actor,
     message: `${message} (${team})`,
     tags: [template.eventType],
-    metadata: null,
+    metadata,
   };
 
-  // Compute new scores before the transaction so the values are ready
-  let newHomeScore = homeScore;
-  let newAwayScore = awayScore;
-
-  if (template.scoreDelta) {
-    const scoringTeam = isHomeTeam ? "home" : "away";
-
-    if (scoringTeam === "home") {
-      newHomeScore += getScoreValue(template.eventType);
-    } else {
-      newAwayScore += getScoreValue(template.eventType);
-    }
-
-    commentaryData.metadata = {
-      scoreDelta: {
-        home: scoringTeam === "home" ? getScoreValue(template.eventType) : 0,
-        away: scoringTeam === "away" ? getScoreValue(template.eventType) : 0,
-      },
-      currentScore: {
-        home: newHomeScore,
-        away: newAwayScore,
-      },
-    };
-  }
-
-  // Persist score update (if any) and commentary in a single transaction
+  // Persist score + commentary atomically
   let inserted;
   const client = await pool.connect();
   const tx = drizzle(client);
+
   try {
     await client.query("BEGIN");
 
@@ -188,16 +188,14 @@ async function generateEvent(simulatorState, broadcastCallback) {
     console.error(
       `[Simulator] Transaction failed for match ${match.id} - Min ${currentMinute}: ${error}`,
     );
-    // Rollback complete; do not advance state
+    // Return unchanged state - the tick will retry on the next interval
     return simulatorState;
   } finally {
     client.release();
   }
 
-  // Broadcast only after the transaction has committed
-  if (broadcastCallback) {
-    broadcastCallback(match.id, inserted);
-  }
+  // Broadcast only after commit
+  broadcastCallback?.(match.id, inserted);
 
   console.log(
     `[Simulator] Match ${match.id} - Min ${currentMinute}: ${template.eventType}`,
@@ -311,55 +309,150 @@ async function createMatchSimulator(matchData, broadcastCallback, onFinished) {
   };
 }
 
-// Create Match Simulator Manager
+/**
+ * Simulator Manager
+ * Manages all active match simulators.
+ *
+ * Auto-start flow:
+ *   1. On server boot, `autoStartLiveMatches()` picks up any match already "live" in the DB.
+ *   2. `startScheduledAutoStart()` runs a periodic tick that:
+ *      - Marks overdue matches as "finished" and stops their simulators.
+ *      - Marks scheduled matches whose startTime has arrived as "live" and starts their simulators.
+ *   3. Manual `POST /simulator/start/:matchId` calls `startMatch()` directly and also works
+ *      for matches that are already "live" (e.g. manually created via the API).
+ *
+ * There is no conflict between auto-start and manual start:
+ *   `startMatchInternal` guards with `activeSimulators.has(matchId)` before adding.
+ */
 function createSimulatorManager() {
   const activeSimulators = new Map();
   let broadcastCallback = null;
+  let schedulerIntervalId = null;
+  let isTickRunning = false;
+
+  const startMatchInternal = async (matchData) => {
+    if (activeSimulators.has(matchData.id)) {
+      console.warn(
+        `[SimulatorManager] Match ${matchData.id} is already being simulated`,
+      );
+      return;
+    }
+
+    const simulator = await createMatchSimulator(
+      matchData,
+      broadcastCallback,
+      (matchId) => {
+        activeSimulators.delete(matchId);
+        console.log(
+          `[SimulatorManager] Match ${matchId} removed from active simulators after finishing`,
+        );
+      },
+    );
+    activeSimulators.set(matchData.id, simulator);
+    simulator.start();
+  };
+
+  const stopMatchInternal = (matchId) => {
+    const simulator = activeSimulators.get(matchId);
+
+    if (simulator) {
+      simulator.stop();
+      activeSimulators.delete(matchId);
+    }
+  };
+
+  const runTick = async () => {
+    if (isTickRunning) return;
+    isTickRunning = true;
+    const now = new Date();
+
+    try {
+      // 1. Expire overdue matches (scheduled or live, past their endTime)
+      const expired = await db
+        .update(matches)
+        .set({ status: "finished" })
+        .where(
+          and(
+            inArray(matches.status, ["scheduled", "live"]),
+            lte(matches.endTime, now),
+          ),
+        )
+        .returning({ id: matches.id });
+
+      for (const { id } of expired) {
+        stopMatchInternal(id);
+      }
+
+      // 2. Start scheduled matches whose startTime has arrived (and endTime is in the future)
+      const due = await db
+        .update(matches)
+        .set({ status: "live" })
+        .where(
+          and(
+            eq(matches.status, "scheduled"),
+            lte(matches.startTime, now),
+            gt(matches.endTime, now),
+          ),
+        )
+        .returning(); // full row - sport, homeTeam, awayTeam, etc. are required by the simulator
+
+      for (const match of due) {
+        await startMatchInternal(match);
+      }
+    } catch (error) {
+      console.error(
+        "[SimulatorManager] Scheduled auto-start tick failed:",
+        error,
+      );
+    } finally {
+      isTickRunning = false;
+    }
+  };
 
   return {
+    // Wire up the WebSocket broadcast so the simulator can push events.
     setBroadcastCallback(callback) {
       broadcastCallback = callback;
     },
 
-    // Start simulating a match
+    // Manually start a specific match (used by POST /simulator/start/:matchId).
     async startMatch(matchData) {
-      if (activeSimulators.has(matchData.id)) {
-        console.warn(
-          `[SimulatorManager] Match ${matchData.id} is already being simulated`,
-        );
-        return;
-      }
-
-      const simulator = await createMatchSimulator(
-        matchData,
-        broadcastCallback,
-        (matchId) => {
-          activeSimulators.delete(matchId);
-          console.log(
-            `[SimulatorManager] Match ${matchId} removed from active simulators after finishing`,
-          );
-        },
-      );
-      activeSimulators.set(matchData.id, simulator);
-      simulator.start();
+      await startMatchInternal(matchData);
     },
 
-    // Stop simulating a match
+    // Manually stop a specific match (used by POST /simulator/stop/:matchId)
     stopMatch(matchId) {
-      const simulator = activeSimulators.get(matchId);
-
-      if (simulator) {
-        simulator.stop();
-        activeSimulators.delete(matchId);
-      }
+      stopMatchInternal(matchId);
     },
 
-    // Stop all active simulations
+    // Stop all active simulations (used on server shutdown)
     stopAll() {
       for (const simulator of activeSimulators.values()) {
         simulator.stop();
       }
       activeSimulators.clear();
+    },
+
+    startScheduledAutoStart(intervalMs = 15000) {
+      if (schedulerIntervalId) return;
+
+      schedulerIntervalId = setInterval(runTick, intervalMs);
+
+      // run immediately on start
+      runTick().catch((error) => {
+        console.error("[SimulatorManager] Initial tick failed:", error);
+      });
+      console.log(
+        `[SimulatorManager] Scheduled auto-start watcher is running every ${intervalMs}ms`,
+      );
+    },
+
+    // Stops the periodic scheduler
+    stopScheduledAutoStart() {
+      if (!schedulerIntervalId) return;
+      clearInterval(schedulerIntervalId);
+      schedulerIntervalId = null;
+      console.log("[SimulatorManager] Scheduled stopped");
     },
 
     isSimulating(matchId) {
@@ -379,9 +472,7 @@ function createSimulatorManager() {
           .where(eq(matches.status, "live"));
 
         for (const match of liveMatches) {
-          if (!activeSimulators.has(match.id)) {
-            this.startMatch(match);
-          }
+          await startMatchInternal(match);
         }
 
         console.log(

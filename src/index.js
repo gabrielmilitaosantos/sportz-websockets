@@ -26,6 +26,17 @@ app.get("/", (req, res) => {
   res.send("Welcome to the server!");
 });
 
+function shutdown() {
+  simulatorManager.stopScheduledAutoStart();
+  simulatorManager.stopAll();
+  server.close(() => {
+    process.exit(0);
+  });
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+
 app.use("/matches", matchRouter);
 app.use("/matches/:id/commentary", commentaryRouter);
 app.use("/simulator", simulatorRouter);
@@ -51,4 +62,5 @@ server.listen(PORT, HOST, () => {
   simulatorManager.autoStartLiveMatches().catch((error) => {
     console.error("[Server] Failed to auto-start live matches: ", error);
   });
+  simulatorManager.startScheduledAutoStart();
 });

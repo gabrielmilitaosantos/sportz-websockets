@@ -8,13 +8,14 @@ import {
 import { matches } from "../db/schema.js";
 import { db } from "../db/db.js";
 import { getMatchStatus } from "../utils/match-status.js";
+import { serializeMatchTimes } from "../utils/datetime.js";
 import { desc, eq } from "drizzle-orm";
 
 export const matchRouter = Router();
 
 const MAX_LIMIT = 100;
 
-// '/matches'
+// GET /matches
 matchRouter.get("/", async (req, res) => {
   const parsed = listMatchesQuerySchema.safeParse(req.query);
 
@@ -33,13 +34,14 @@ matchRouter.get("/", async (req, res) => {
       .from(matches)
       .orderBy(desc(matches.createdAt))
       .limit(limit);
-
-    res.json({ data });
+    res.json({ data: data.map(serializeMatchTimes) });
   } catch (error) {
+    console.error("Failed to list matches", error);
     res.status(500).json({ error: "Failed to list matches." });
   }
 });
 
+// POST /matches
 matchRouter.post("/", async (req, res) => {
   const parsed = createMatchSchema.safeParse(req.body);
 
@@ -50,26 +52,28 @@ matchRouter.post("/", async (req, res) => {
     });
   }
 
-  const { startTime, endTime, homeScore, awayScore } = parsed.data;
+  const { startTime, endTime, homeScore, awayScore, ...rest } = parsed.data;
+
+  const startDate = new Date(startTime);
+  const endDate = endTime ? new Date(endTime) : null;
 
   try {
     const [event] = await db
       .insert(matches)
       .values({
-        ...parsed.data,
-        startTime: new Date(startTime),
-        endTime: new Date(endTime),
+        ...rest,
+        startTime: startDate,
+        endTime: endDate,
         homeScore: homeScore ?? 0,
         awayScore: awayScore ?? 0,
-        status: getMatchStatus(startTime, endTime),
+        status: getMatchStatus(startDate, endDate),
       })
       .returning();
 
     if (res.app.locals.broadcastMatchCreated) {
-      res.app.locals.broadcastMatchCreated(event);
+      res.app.locals.broadcastMatchCreated(serializeMatchTimes(event));
     }
-
-    res.status(201).json({ data: event });
+    res.status(201).json({ data: serializeMatchTimes(event) });
   } catch (error) {
     console.error("Failed to create match", error);
     res.status(500).json({
@@ -78,6 +82,7 @@ matchRouter.post("/", async (req, res) => {
   }
 });
 
+// PATCH /matches/:id/score
 matchRouter.patch("/:id/score", async (req, res) => {
   const matchId = matchIdParamSchema.safeParse(req.params);
 
@@ -97,21 +102,22 @@ matchRouter.patch("/:id/score", async (req, res) => {
   }
 
   const { homeScore, awayScore } = parsedBody.data;
+  const { id } = matchId.data;
 
   try {
     const [updated] = await db
       .update(matches)
       .set({ homeScore, awayScore })
-      .where(eq(matches.id, matchId))
+      .where(eq(matches.id, id))
       .returning();
 
     if (!updated) {
       return res.status(404).json({ error: "Match not found" });
     }
 
-    res.status(200).json({ data: updated });
-  } catch (err) {
-    console.error(err);
+    res.status(200).json({ data: serializeMatchTimes(updated) });
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ error: "Failed to update score" });
   }
 });

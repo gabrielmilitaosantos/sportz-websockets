@@ -14,13 +14,21 @@ export const matchIdParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
+const isoDateTimeWithTimezoneSchema = z
+  .string()
+  .refine((value) => {
+    const hasTimeZone = /(?:Z|[+-]\d{2}:\d{2})$/.test(value);
+    const date = new Date(value);
+    return hasTimeZone && !Number.isNaN(date.getTime());
+  }, "Must be an ISO datetime with timezone (e.g. 2026-04-09T19:00:00.000Z)");
+
 export const createMatchSchema = z
   .object({
     sport: z.string().min(1),
     homeTeam: z.string().min(1),
     awayTeam: z.string().min(1),
-    startTime: z.iso.datetime(),
-    endTime: z.iso.datetime(),
+    startTime: isoDateTimeWithTimezoneSchema,
+    endTime: isoDateTimeWithTimezoneSchema,
     homeScore: z.coerce.number().int().nonnegative().optional(),
     awayScore: z.coerce.number().int().nonnegative().optional(),
   })
