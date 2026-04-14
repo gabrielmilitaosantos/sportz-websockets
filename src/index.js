@@ -39,8 +39,8 @@ app.get("/", (req, res) => {
 
 app.use("/auth", authRouter);
 
-app.use("/matches", requireAuth, matchRouter);
 app.use("/matches/:id/commentary", requireAuth, commentaryRouter);
+app.use("/matches", requireAuth, matchRouter);
 app.use("/simulator", requireAuth, simulatorRouter);
 
 const { broadcastMatchCreated, broadcastCommentary } =
