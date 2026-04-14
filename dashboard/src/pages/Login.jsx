@@ -26,7 +26,7 @@ export default function Login() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    await login(username, password);
+    await login(username.trim(), password);
   }
 
   return (
@@ -112,7 +112,7 @@ export default function Login() {
 
             <button
               type="submit"
-              disabled={isLoading || !username || !password}
+              disabled={isLoading || !username.trim() || !password}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-gray-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isLoading ? (

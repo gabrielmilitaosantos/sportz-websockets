@@ -49,9 +49,12 @@ export const useAuthStore = create((set, get) => ({
       localStorage.setItem("auth_token", token);
       set({ token, username, status: "authenticated" });
     } catch (error) {
+      localStorage.removeItem("auth_token");
       set({
+        token: null,
+        username: null,
         status: "unauthenticated",
-        error: error.message ?? "Login failed",
+        error: error instanceof Error ? error.message : "Login failed",
       });
     }
   },

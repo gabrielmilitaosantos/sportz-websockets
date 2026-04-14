@@ -1,7 +1,7 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
-import { timingSafeEqual } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 
 export const authRouter = Router();
 
@@ -18,6 +18,10 @@ if (!JWT_SECRET) throw new Error("JWT_SECRET isn't defined");
 if (!ADMIN_USERNAME) throw new Error("ADMIN_USERNAME is required");
 if (!ADMIN_PASSWORD) throw new Error("ADMIN_PASSWORD is required");
 
+function digest(value) {
+  return createHash("sha256").update(value, "utf-8").digest();
+}
+
 authRouter.post("/login", (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
 
@@ -33,21 +37,15 @@ authRouter.post("/login", (req, res) => {
    * matched before the first mismatch — an attacker can brute-force
    * credentials character by character by measuring response time.
    */
-  const encoder = new TextEncoder();
+  const userNameMatch = timingSafeEqual(
+    digest(username),
+    digest(ADMIN_USERNAME),
+  );
 
-  const usernameBuffer = encoder.encode(username);
-  const adminUsernameBuffer = encoder.encode(ADMIN_USERNAME);
-
-  const passwordBuffer = encoder.encode(password);
-  const adminPasswordBuffer = encoder.encode(ADMIN_PASSWORD);
-
-  const userNameMatch =
-    usernameBuffer.length === adminUsernameBuffer.length &&
-    timingSafeEqual(usernameBuffer, adminUsernameBuffer);
-
-  const passwordMatch =
-    passwordBuffer.length === adminPasswordBuffer.length &&
-    timingSafeEqual(passwordBuffer, adminPasswordBuffer);
+  const passwordMatch = timingSafeEqual(
+    digest(password),
+    digest(ADMIN_PASSWORD),
+  );
 
   if (!userNameMatch || !passwordMatch) {
     // Always return the same message regardless of which field was wrong.

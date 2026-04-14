@@ -11,7 +11,7 @@ export async function loginRequest(username, password) {
     body: JSON.stringify({ username, password }),
   });
 
-  const body = await response.json();
+  const body = await response.json().catch(() => ({}));
 
   if (!response.ok) {
     throw new Error(body.error ?? "Login failed");
