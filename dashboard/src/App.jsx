@@ -1,4 +1,4 @@
-import { useAuthStore } from "./hooks/useAuth.jsx";
+import { useAuthStore } from "./hooks/useAuth.js";
 import { useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { PrivateRoute } from "./router/PrivateRoute.jsx";

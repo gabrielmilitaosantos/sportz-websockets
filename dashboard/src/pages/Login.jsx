@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAuthStore } from "../hooks/useAuth.jsx";
+import { useAuthStore } from "../hooks/useAuth.js";
 import { useNavigate } from "react-router-dom";
 
 export default function Login() {

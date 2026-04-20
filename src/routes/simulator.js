@@ -6,13 +6,16 @@ import { eq } from "drizzle-orm";
 
 export const simulatorRouter = Router();
 
-// '/simulator'
+// GET /simulator/status
 simulatorRouter.get("/status", (req, res) => {
-  const activeCount = simulatorManager.getActiveCount();
+  const activeMatchIds = simulatorManager.getActiveMatchIds();
 
   res.json({
-    active: activeCount > 0,
-    activeSimulations: activeCount,
+    active: activeMatchIds.length > 0,
+    activeSimulations: activeMatchIds.length,
+    // Expose individual IDs so the frontend knows exactly which matches
+    // have a running simulator - needed for the start/stop button state.
+    activeMatchIds,
   });
 });
 
