@@ -318,38 +318,55 @@ async function createMatchSimulator(matchData, broadcastCallback, onFinished) {
  *   2. `startScheduledAutoStart()` runs a periodic tick that:
  *      - Marks overdue matches as "finished" and stops their simulators.
  *      - Marks scheduled matches whose startTime has arrived as "live" and starts their simulators.
- *   3. Manual `POST /simulator/start/:matchId` calls `startMatch()` directly and also works
- *      for matches that are already "live" (e.g. manually created via the API).
- *
- * There is no conflict between auto-start and manual start:
- *   `startMatchInternal` guards with `activeSimulators.has(matchId)` before adding.
+ *   Manual flow:
+ *      - `POST /simulator/start/:matchId` calls `startMatch()` directly.
+ *      - Safe alongside auto-start: the 'startingNow' Set + 'activeSimulators' Map prevent any
+ *      double-start even when async paths overlap.
  */
 function createSimulatorManager() {
   const activeSimulators = new Map();
+
+  // Add the matchId to 'startingNow' before any await, and remove it in 'finally' after the simulator is registered.
+  // Any concurrent call sees the ID and skips immediately.
+  const startingNow = new Set();
+
   let broadcastCallback = null;
   let schedulerIntervalId = null;
   let isTickRunning = false;
 
   const startMatchInternal = async (matchData) => {
-    if (activeSimulators.has(matchData.id)) {
+    if (activeSimulators.has(matchData.id) || startingNow.has(matchData.id)) {
       console.warn(
-        `[SimulatorManager] Match ${matchData.id} is already being simulated`,
+        `[SimulatorManager] Match ${matchData.id} is already running or starting - skipped`,
       );
       return;
     }
 
-    const simulator = await createMatchSimulator(
-      matchData,
-      broadcastCallback,
-      (matchId) => {
-        activeSimulators.delete(matchId);
-        console.log(
-          `[SimulatorManager] Match ${matchId} removed from active simulators after finishing`,
-        );
-      },
-    );
-    activeSimulators.set(matchData.id, simulator);
-    simulator.start();
+    startingNow.add(matchData.id);
+
+    try {
+      const simulator = await createMatchSimulator(
+        matchData,
+        broadcastCallback,
+        (matchId) => {
+          activeSimulators.delete(matchId);
+          console.log(
+            `[SimulatorManager] Match ${matchId} removed from active simulators after finishing`,
+          );
+        },
+      );
+
+      activeSimulators.set(matchData.id, simulator);
+      simulator.start();
+    } catch (error) {
+      console.error(
+        `[SimulatorManager] Failed to start match ${matchData.id}: `,
+        error,
+      );
+      throw error;
+    } finally {
+      startingNow.delete(matchData.id);
+    }
   };
 
   const stopMatchInternal = (matchId) => {
@@ -397,7 +414,14 @@ function createSimulatorManager() {
         .returning(); // full row - sport, homeTeam, awayTeam, etc. are required by the simulator
 
       for (const match of due) {
-        await startMatchInternal(match);
+        try {
+          await startMatchInternal(match);
+        } catch (error) {
+          console.error(
+            `[SimulatorManager] Skipping match ${match.id} after start failure:`,
+            error,
+          );
+        }
       }
     } catch (error) {
       console.error(
@@ -461,6 +485,10 @@ function createSimulatorManager() {
 
     getActiveCount() {
       return activeSimulators.size;
+    },
+
+    getActiveMatchIds() {
+      return Array.from(activeSimulators.keys());
     },
 
     // Auto-start simulations for all live matches

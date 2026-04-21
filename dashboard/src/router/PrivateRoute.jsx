@@ -1,4 +1,4 @@
-import { useAuthStore } from "../hooks/useAuth.jsx";
+import { useAuthStore } from "../hooks/useAuth.js";
 import { Navigate, Outlet } from "react-router-dom";
 
 /**
