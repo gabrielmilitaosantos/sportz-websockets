@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useEffect } from "react";
+import { useCallback, useRef, useState, useEffect, useMemo } from "react";
 import { useAuthStore } from "../hooks/useAuth.js";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -76,10 +76,12 @@ export default function Dashboard() {
   const { data: simStatus } = useSimulatorStatus();
   const stopAllMutation = useStopAllSimulators();
 
+  const EMPTY_SET = new Set();
   // IDs of matches with a running simulator process
-  const activeMatchIds = simStatus?.activeMatchIds ?? new Set();
+  const activeMatchIds = simStatus?.activeMatchIds ?? EMPTY_SET;
 
-  // Track which match IDs we've already subscribed to avoid duplicate subs
+  // Track which match IDs we've already subscribed to, so we can diff
+  // against the current live set and unsubscribe when matches finish.
   const subscribedRef = useRef(new Set());
 
   // WebSocket: receive real-time commentary and match_created events
@@ -98,20 +100,46 @@ export default function Dashboard() {
     [queryClient],
   );
 
-  const { subscribe } = useWebSocket(handleWsMessage);
+  const { subscribe, unsubscribe } = useWebSocket(handleWsMessage);
 
-  const liveMatchIds = matches
-    .filter((match) => match.status === "live")
-    .map((match) => match.id);
+  const liveMatchIds = useMemo(
+    () => matches.filter((m) => m.status === "live").map((m) => m.id),
+    [matches],
+  );
 
   useEffect(() => {
-    for (const matchId of liveMatchIds) {
-      if (!subscribedRef.current.has(matchId)) {
-        subscribe(matchId);
-        subscribedRef.current.add(matchId);
+    const current = subscribedRef.current;
+    const next = new Set(liveMatchIds);
+
+    // subscribe to new
+    for (const id of next) {
+      if (!current.has(id)) {
+        subscribe(id);
+        current.add(id);
       }
     }
-  }, [liveMatchIds.join(","), subscribe]);
+
+    // unsubscribe from ones that are no longer live
+    for (const id of current) {
+      if (!next.has(id)) {
+        unsubscribe(id);
+        current.delete(id);
+        setLiveCommentary((prev) => {
+          if (!(id in prev)) return prev;
+          const { [id]: _, ...rest } = prev;
+          return rest;
+        });
+      }
+    }
+  }, [liveMatchIds, subscribe, unsubscribe]);
+
+  // Cleanup all subscriptions on unmount
+  useEffect(() => {
+    return () => {
+      for (const id of subscribedRef.current) unsubscribe(id);
+      subscribedRef.current.clear();
+    };
+  }, [unsubscribe]);
 
   // Filter matches by selected tab
   const visibleMatches =

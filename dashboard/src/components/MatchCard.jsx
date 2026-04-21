@@ -36,7 +36,7 @@ function Spinner() {
 function PlayIcon() {
   return (
     <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-current">
-      <path d="M5 3.518 4.5-8 4.5V3.5z" />
+      <path d="M5 3.5 L13 8 L5 12.5 Z" />
     </svg>
   );
 }
@@ -59,7 +59,7 @@ export function MatchCard({ match, isSimulating }) {
   const isFinished = match.status === "finished";
   const isPending = startMutation.isPending || stopMutation.isPending;
 
-  // Start button is available for any live match that ins't currently simulating
+  // Start button is available for any live match that isn't currently simulating
   const canStart = isLive && !isSimulating;
   const canStop = isLive && isSimulating;
 
@@ -101,7 +101,7 @@ export function MatchCard({ match, isSimulating }) {
               {match.homeTeam}
             </p>
             <p className="text-3xl font-bold tabular-nums text-white">
-              {match.homeScore}
+              {match.homeScore ?? 0}
             </p>
           </div>
           <span className="text-lg font-light text-gray-600">-</span>
@@ -110,7 +110,7 @@ export function MatchCard({ match, isSimulating }) {
               {match.awayTeam}
             </p>
             <p className="text-3xl font-bold tabular-nums text-white">
-              {match.awayScore}
+              {match.awayScore ?? 0}
             </p>
           </div>
         </div>

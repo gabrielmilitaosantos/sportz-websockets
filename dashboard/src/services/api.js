@@ -13,7 +13,9 @@ export async function apiFetch(path, options = {}) {
   const response = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(options.body && !(options.body instanceof FormData) // Only set Content-type when a request body is present.
+        ? { "Content-Type": "application/json" }
+        : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },

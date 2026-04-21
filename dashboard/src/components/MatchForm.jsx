@@ -30,16 +30,25 @@ const INITIAL_STATE = {
 
 export function MatchForm({ onClose }) {
   const [form, setForm] = useState(INITIAL_STATE);
+  const [validationError, setValidationError] = useState(null);
   const { mutate, isPending, error, reset } = useCreateMatch();
 
   function handleChange(e) {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
     if (error) reset(); // clear previous error when user starts typing
+    if (validationError) setValidationError(null);
   }
 
   function handleSubmit(e) {
     e.preventDefault();
+
+    const startMs = new Date(brazilInputToUtcIso(form.startTime)).getTime();
+    const endMs = new Date(brazilInputToUtcIso(form.endTime)).getTime();
+    if (endMs <= startMs) {
+      setValidationError("End time must be after start time.");
+      return;
+    }
 
     mutate(
       {
@@ -136,9 +145,9 @@ export function MatchForm({ onClose }) {
         </div>
       </div>
 
-      {error && (
+      {(validationError || error) && (
         <p className="rounded-lg border border-red-500/20 bg-red-500/10 px-3.5 py-2.5 text-sm text-red-400">
-          {error.message}
+          {validationError ?? error.message}
         </p>
       )}
 

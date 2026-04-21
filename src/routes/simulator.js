@@ -90,7 +90,7 @@ simulatorRouter.post("/stop/:matchId", (req, res) => {
  * Stop all active simulations
  */
 simulatorRouter.post("/stop-all", (req, res) => {
-  const count = simulatorManager.getActiveCount();
+  const count = simulatorManager.getActiveMatchIds().length;
   simulatorManager.stopAll();
 
   res.json({

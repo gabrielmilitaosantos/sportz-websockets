@@ -358,6 +358,12 @@ function createSimulatorManager() {
 
       activeSimulators.set(matchData.id, simulator);
       simulator.start();
+    } catch (error) {
+      console.error(
+        `[SimulatorManager] Failed to start match ${matchData.id}: `,
+        error,
+      );
+      throw error;
     } finally {
       startingNow.delete(matchData.id);
     }
