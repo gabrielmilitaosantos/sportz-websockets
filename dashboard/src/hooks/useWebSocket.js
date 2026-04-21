@@ -21,6 +21,8 @@ export function useWebSocket(onMessage) {
   // Queue for subscribe/unsubscribe calls that arrive before the socket opens
   const pendingRef = useRef([]);
 
+  const activeSubsRef = useRef(new Set());
+
   // Keep the ref up to date without restarting the connection on every render
   useEffect(() => {
     onMessageRef.current = onMessage;
@@ -64,6 +66,11 @@ export function useWebSocket(onMessage) {
         opened = true;
         // Successful connection - reset backoff for the next disconnect cycle
         backoffRef.current = BACKOFF_BASE_MS;
+
+        // Replay active subscriptions on (re)connect
+        for (const matchId of activeSubsRef.current) {
+          socket.send(JSON.stringify({ type: "subscribe", matchId }));
+        }
 
         // Drain any subscribe calls that were made before the connection opened
         for (const msg of pendingRef.current) {
@@ -145,6 +152,7 @@ export function useWebSocket(onMessage) {
 
   const subscribe = useCallback(
     (matchId) => {
+      activeSubsRef.current.add(matchId);
       send({ type: "subscribe", matchId });
     },
     [send],
@@ -152,6 +160,7 @@ export function useWebSocket(onMessage) {
 
   const unsubscribe = useCallback(
     (matchId) => {
+      activeSubsRef.current.delete(matchId);
       send({ type: "unsubscribe", matchId });
     },
     [send],

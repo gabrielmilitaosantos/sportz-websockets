@@ -414,7 +414,14 @@ function createSimulatorManager() {
         .returning(); // full row - sport, homeTeam, awayTeam, etc. are required by the simulator
 
       for (const match of due) {
-        await startMatchInternal(match);
+        try {
+          await startMatchInternal(match);
+        } catch (error) {
+          console.error(
+            `[SimulatorManager] Skipping match ${match.id} after start failure:`,
+            error,
+          );
+        }
       }
     } catch (error) {
       console.error(
